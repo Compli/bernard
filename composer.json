@@ -13,6 +13,7 @@
     },
     "require-dev" : {
         "aws/aws-sdk-php": "^3.0",
+        "byrnedo/php-nats-streaming": "^0.2.4",
         "doctrine/dbal": "^2.5",
         "doctrine/instantiator": "^1.0.5",
         "iron-io/iron_mq": "^4.0",
@@ -30,6 +31,7 @@
     },
     "suggest": {
         "php-amqplib/php-amqplib": "Allow sending messages to an AMQP server using php-amqplib",
+        "byrnedo/php-nats-streaming": "Allow sending messages to a NATS messaging system using php-nats-streaming",
         "doctrine/dbal": "Allow sending messages to simulated message queue in a database via doctrine dbal",
         "iron-io/iron_mq": "Allow sending messages to IronMQ",
         "pda/pheanstalk": "Allow sending messages to Beanstalk using pheanstalk",

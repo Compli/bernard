@@ -2,8 +2,29 @@
 
 namespace Bernard\Driver\Nats;
 
-final class Driver implements \Bernard\Driver
+use NatsStreaming\Connection;
+use NatsStreaming\Msg;
+use NatsStreaming\SubscriptionOptions;
+use NatsStreamingProtos\StartPosition;
+
+class Driver implements \Bernard\Driver
 {
+    /** @var Connection */
+    protected $connection;
+    protected $subscriptionOptions;
+
+    public function __construct(Connection $connection)
+    {
+        $this->connection = $connection;
+        $this->connection->connect();
+        $this->subscriptionOptions = new SubscriptionOptions([
+            'durableName' => 'test',
+            'startAt' => StartPosition::NewOnly(),
+            'manualAck' => true,
+        ]);
+
+    }
+
     /**
      * Returns a list of all queue names.
      *
@@ -33,7 +54,7 @@ final class Driver implements \Bernard\Driver
      */
     public function countMessages($queueName)
     {
-        // TODO: Implement countMessages() method.
+        return $this->connection->pubsCount();
     }
 
     /**
@@ -44,7 +65,7 @@ final class Driver implements \Bernard\Driver
      */
     public function pushMessage($queueName, $message)
     {
-        // TODO: Implement pushMessage() method.
+        $response = $this->connection->publish($queueName, $message);
     }
 
     /**
@@ -58,7 +79,18 @@ final class Driver implements \Bernard\Driver
      */
     public function popMessage($queueName, $duration = 5)
     {
-        // TODO: Implement popMessage() method.
+        $poppedMessage = [null, null];
+
+        $handle = function (Msg $message) use (&$poppedMessage) {
+            $content = $message->getData()->getContents();
+            $poppedMessage = [$content, $message->getSequence()];
+        };
+        $subscription = $this->connection->subscribe($queueName, $handle, $this->subscriptionOptions);
+        $this->connection->natsCon()->setStreamTimeout($duration);
+
+        $subscription->wait(1);
+
+        return $poppedMessage;
     }
 
     /**
