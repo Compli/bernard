@@ -2,16 +2,24 @@
 
 namespace Bernard\Driver\Nats;
 
+use Closure;
 use NatsStreaming\Connection;
 use NatsStreaming\Msg;
+use NatsStreaming\Subscription;
 use NatsStreaming\SubscriptionOptions;
+use NatsStreamingProtos\Ack;
 use NatsStreamingProtos\StartPosition;
 
 class Driver implements \Bernard\Driver
 {
     /** @var Connection */
     protected $connection;
+    protected $counts = [];
+    protected $poppedMessage = [];
+    protected $hasManualAcknowledgement;
     protected $subscriptionOptions;
+    /** @var Subscription[] */
+    protected $subscriptions;
 
     public function __construct(Connection $connection)
     {
@@ -23,6 +31,15 @@ class Driver implements \Bernard\Driver
             'manualAck' => true,
         ]);
 
+
+        $getManualAcknowledgement = function(SubscriptionOptions $subscriptionOptions) {
+            $closure = function() {
+                 return $this->manualAck;
+            };
+
+            return Closure::bind($closure, $subscriptionOptions, SubscriptionOptions::class)->__invoke();
+        };
+        $this->hasManualAcknowledgement = $getManualAcknowledgement($this->subscriptionOptions);
     }
 
     /**
@@ -42,7 +59,6 @@ class Driver implements \Bernard\Driver
      */
     public function createQueue($queueName)
     {
-        // TODO: Implement createQueue() method.
     }
 
     /**
@@ -54,7 +70,7 @@ class Driver implements \Bernard\Driver
      */
     public function countMessages($queueName)
     {
-        return $this->connection->pubsCount();
+        return isset($this->counts[$queueName]) ? $this->counts[$queueName] : 0;
     }
 
     /**
@@ -66,6 +82,7 @@ class Driver implements \Bernard\Driver
     public function pushMessage($queueName, $message)
     {
         $response = $this->connection->publish($queueName, $message);
+        $this->increaseQueueCount($queueName);
     }
 
     /**
@@ -79,18 +96,22 @@ class Driver implements \Bernard\Driver
      */
     public function popMessage($queueName, $duration = 5)
     {
-        $poppedMessage = [null, null];
+        $this->poppedMessage = [null, null];
 
-        $handle = function (Msg $message) use (&$poppedMessage) {
+        $handle = function (Msg $message) use ($queueName) {
             $content = $message->getData()->getContents();
-            $poppedMessage = [$content, $message->getSequence()];
+            $this->poppedMessage = [$content, $message->getSequence()];
+            if (! $this->hasManualAcknowledgement) {
+                $this->decreaseQueueCount($queueName);
+            }
         };
-        $subscription = $this->connection->subscribe($queueName, $handle, $this->subscriptionOptions);
+        if (empty($this->subscriptions[$queueName])) {
+            $this->subscriptions[$queueName] = $this->connection->subscribe($queueName, $handle, $this->subscriptionOptions);
+        }
         $this->connection->natsCon()->setStreamTimeout($duration);
+        $this->subscriptions[$queueName]->wait(1);
 
-        $subscription->wait(1);
-
-        return $poppedMessage;
+        return $this->poppedMessage;
     }
 
     /**
@@ -102,7 +123,12 @@ class Driver implements \Bernard\Driver
      */
     public function acknowledgeMessage($queueName, $receipt)
     {
-        // TODO: Implement acknowledgeMessage() method.
+        $req = new Ack();
+        $req->setSubject($queueName);
+        $req->setSequence($receipt);
+        $data = $req->toStream()->getContents();
+        $this->connection->natsCon()->publish($this->subscriptions[$queueName]->getAckInbox(), $data);
+        $this->decreaseQueueCount($queueName);
     }
 
     /**
@@ -133,6 +159,33 @@ class Driver implements \Bernard\Driver
      */
     public function info()
     {
-        // TODO: Implement info() method.
+        $info = [];
+        $streamSocket = $this->connection->natsCon()->getStreamSocket();
+        if (!$streamSocket) {
+            return [];
+        }
+        $info['stream_info'] = stream_get_meta_data($streamSocket);
+
+        return $info;
+    }
+
+    protected function decreaseQueueCount($queueName)
+    {
+        if (!isset($this->counts[$queueName])) {
+            $this->counts[$queueName] = 0;
+        }
+        $this->counts[$queueName]--;
+
+        if (0 > $this->counts[$queueName]) {
+            $this->counts[$queueName] = 0;
+        }
+    }
+
+    protected function increaseQueueCount($queueName)
+    {
+        if (!isset($this->counts[$queueName])) {
+            $this->counts[$queueName] = 0;
+        }
+        $this->counts[$queueName]++;
     }
 }
