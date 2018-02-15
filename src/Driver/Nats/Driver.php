@@ -21,17 +21,12 @@ class Driver implements \Bernard\Driver
     /** @var Subscription[] */
     protected $subscriptions;
 
-    public function __construct(Connection $connection)
+    public function __construct(Connection $connection, $options = [])
     {
         $this->connection = $connection;
         $this->connection->connect();
-        $this->subscriptionOptions = new SubscriptionOptions([
-            'durableName' => 'test',
-            'startAt' => StartPosition::NewOnly(),
-            'manualAck' => true,
-        ]);
-
-
+        $subscriptionOptions = array_merge($options, ['startAt' => StartPosition::NewOnly()]);
+        $this->subscriptionOptions = new SubscriptionOptions($subscriptionOptions);
         $getManualAcknowledgement = function(SubscriptionOptions $subscriptionOptions) {
             $closure = function() {
                  return $this->manualAck;

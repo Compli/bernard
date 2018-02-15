@@ -13,7 +13,6 @@ class NatsDriverFunctionalTest extends \PHPUnit\Framework\TestCase
     private $connection;
     /** @var Driver */
     private $driver;
-    private $messages;
 
     public function setUp()
     {
@@ -22,13 +21,13 @@ class NatsDriverFunctionalTest extends \PHPUnit\Framework\TestCase
             'port' => '4222',
         ]);
         $options = new ConnectionOptions();
-        $options->setNatsOptions($natsOptions);
         $options->setClientID("test");
+        $options->setClusterID("main");
+        $options->setNatsOptions($natsOptions);
         $this->connection = new Connection($options);
-        $this->driver = new Driver($this->connection);
-        return;
+
         $subscriptionOptions = [
-            'ackWaitSecs' => 3,
+            'ackWaitSecs' => 2,
             'durableName' => 'test',
             'manualAck' => true,
         ];
@@ -37,15 +36,17 @@ class NatsDriverFunctionalTest extends \PHPUnit\Framework\TestCase
 
     public function tearDown()
     {
+        do {
+            $message = $this->driver->popMessage('foo', 1);
+            $this->driver->acknowledgeMessage('foo', $message[1]);
 
+        } while( null !== $message[0]);
     }
 
     public function testPopMessageDurationWithNoNewMessages()
     {
         $runtime = microtime(true) + 2; // allow extra time for processing
         $message = $this->driver->popMessage('foo', 1);
-
-        $this->driver->acknowledgeMessage('foo', $message[1]);
 
         $this->assertEmpty($message[0]);
         $this->assertEmpty($message[1]);
@@ -86,15 +87,21 @@ class NatsDriverFunctionalTest extends \PHPUnit\Framework\TestCase
         $this->assertNull($message3, 'Null message is returned when popping an empty queue');
         $this->assertNull($receipt3, 'Null receipt is returned when popping an empty queue');
 
-        sleep(4); // duration before reinserting
+        $maxTimeToTry = microtime(true) + 60;
+        do {
+            list($reloadedMessage, $reloadedReceipt) = $this->driver->popMessage('foo', 1);
+        } while ($maxTimeToTry > microtime(true) && null === $reloadedMessage );
 
-        list($message1a, $receipt1a) = $this->driver->popMessage('foo');
+        $this->assertSame('message1', $reloadedMessage, 'The first message republished is popped first when there is no acknowledgement');
+        $this->assertInternalType('int', $reloadedReceipt, 'The message receipt is the sequence number');
 
-        $this->assertEquals(2, $this->messages->count(), 'Popped messages remain in the database');
+        $this->assertEquals(2, $this->driver->countMessages('foo'), 'Popped messages remain in the database');
 
         $this->driver->acknowledgeMessage('foo', $receipt1);
-        $this->assertEquals(1, $this->messages->count(), 'Acknowledged messages decrease the count');
+        $this->assertEquals(1, $this->driver->countMessages('foo'), 'Acknowledged messages decrease the count');
 
+        list($message2, $receipt2) = $this->driver->popMessage('foo');
+        $this->assertSame('message2', $message2, 'Re-pop the second message');
         $this->driver->acknowledgeMessage('foo', $receipt2);
 
         list($message3, $receipt3) = $this->driver->popMessage('foo', 1);
