@@ -15,6 +15,7 @@ class Driver implements \Bernard\Driver
     /** @var Connection */
     protected $connection;
     protected $counts = [];
+    protected $groupName;
     protected $poppedMessage = [];
     protected $hasManualAcknowledgement;
     protected $subscriptionOptions;
@@ -27,6 +28,7 @@ class Driver implements \Bernard\Driver
         $this->connection->connect();
         $subscriptionOptions = array_merge($options, ['startAt' => StartPosition::NewOnly()]);
         $this->subscriptionOptions = new SubscriptionOptions($subscriptionOptions);
+        $this->groupName = $subscriptionOptions['groupName'];
         $getManualAcknowledgement = function(SubscriptionOptions $subscriptionOptions) {
             $closure = function() {
                  return $this->manualAck;
@@ -101,7 +103,11 @@ class Driver implements \Bernard\Driver
             }
         };
         if (empty($this->subscriptions[$queueName])) {
-            $this->subscriptions[$queueName] = $this->connection->subscribe($queueName, $handle, $this->subscriptionOptions);
+            if (!empty($this->groupName)) {
+                $this->subscriptions[$queueName] = $this->connection->queueSubscribe($queueName, $this->groupName, $handle, $this->subscriptionOptions);
+            } else {
+                $this->subscriptions[$queueName] = $this->connection->subscribe($queueName, $handle, $this->subscriptionOptions);
+            }
         }
         $this->connection->natsCon()->setStreamTimeout($duration);
         $this->subscriptions[$queueName]->wait(1);
