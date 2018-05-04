@@ -26,7 +26,7 @@ class Driver implements \Bernard\Driver
     {
         $this->connection = $connection;
         $this->connection->connect();
-        $subscriptionOptions = array_merge($options, ['startAt' => StartPosition::NewOnly()]);
+        $subscriptionOptions = array_merge($options, ['startAt' => StartPosition::TimeDeltaStart()]);
         $this->subscriptionOptions = new SubscriptionOptions($subscriptionOptions);
         $this->groupName = $subscriptionOptions['groupName'];
         $getManualAcknowledgement = function(SubscriptionOptions $subscriptionOptions) {
